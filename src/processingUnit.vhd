@@ -72,15 +72,18 @@ signal temp128 : std_logic_vector(7 downto 0) := "00000000";
 
 -- layer 3 deep = final layer
 --signal temp129 : std_logic_vector(7 downto 0) := "00000000";
+signal enb : std_logic_vector(7 downto 0) := (others => '0');
 
 begin
 
+updateEnable : enb <= (others => en);
+
 -- input layer
-dff1 : dGenFlipFlop generic map (busWidth => 8) port map(d => p0, q => tempdff1, en => en, clk => clk);
-pixav12 : pixelAverager generic map(busWidth => 8) port map(pa => p1, pb => p2, pc => temp12, clk => clk);
-pixav34 : pixelAverager generic map(busWidth => 8) port map(pa => p3, pb => p4, pc => temp34, clk => clk);
-pixav56 : pixelAverager generic map(busWidth => 8) port map(pa => p5, pb => p6, pc => temp56, clk => clk);
-pixav78 : pixelAverager generic map(busWidth => 8) port map(pa => p7, pb => p8, pc => temp78, clk => clk);
+dff1 : dGenFlipFlop generic map (busWidth => 8) port map(d => p0 and enb, q => tempdff1, en => en, clk => clk);
+pixav12 : pixelAverager generic map(busWidth => 8) port map(pa => p1 and enb, pb => p2 and enb, pc => temp12, clk => clk);
+pixav34 : pixelAverager generic map(busWidth => 8) port map(pa => p3 and enb, pb => p4 and enb, pc => temp34, clk => clk);
+pixav56 : pixelAverager generic map(busWidth => 8) port map(pa => p5 and enb, pb => p6 and enb, pc => temp56, clk => clk);
+pixav78 : pixelAverager generic map(busWidth => 8) port map(pa => p7 and enb, pb => p8 and enb, pc => temp78, clk => clk);
 
 -- layer 1 deep
 dff2 : dGenFlipFlop generic map (busWidth => 8) port map(d => tempdff1, q => tempdff2, en => en, clk => clk);

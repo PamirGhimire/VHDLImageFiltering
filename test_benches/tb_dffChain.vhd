@@ -22,21 +22,38 @@ ARCHITECTURE behavior OF tb_dffChain IS
 		-- ports for observing fifos
 		pfull_f1 : out std_logic;
 		pfull_f2 : out std_logic;
+		-- ports for observing control-dff chain
+		ctrldffchain : out std_logic_vector(18 downto 0);
+		-- write enables 
+		wr_en_f1 : out std_logic;
+		wr_en_f2 : out std_logic;
+		-- read enables
+		rd_en_f1 : out std_logic;
+		rd_en_f2 : out std_logic;
+		-- start processing flag
+		enWrCtrlStMachine : out std_logic;
+		
 		-- port for observing how many pixels have been read
 		pixcounter : out std_logic_vector(13 downto 0);
 		-- common reset 
 		rst : in std_logic;
-		-- common write enable 
-		wr_en_f1 : in std_logic;
-		wr_en_f2 : in std_logic;
-		-- read enables
-		rd_en_f1 : in std_logic;
-		rd_en_f2 : in std_logic;
+
 		-- common prog. full threshold
 		prog_full_thresh : in std_logic_vector(9 downto 0)
      );
     END COMPONENT;
     
+
+	-- component declaration of write control state machine
+		component writecontrolstatemachine is
+			port(
+				clk : in std_logic;
+				en : in std_logic;
+				
+				write2file : out std_logic
+			);
+		end component;
+ 
 
    --TEST BENCH : Inputs
    signal d : std_logic_vector(7 downto 0) := (others => '0');
@@ -51,13 +68,18 @@ ARCHITECTURE behavior OF tb_dffChain IS
 	signal rd_en_f1 : std_logic := '0';
 	signal rd_en_f2 : std_logic := '0';
 	
+	signal enWrCtrlStMachine : std_logic := '0';
+	
 	signal prog_full_thresh : std_logic_vector(9 downto 0) := "0000000000";
 
  	--TEST BENCH : Outputs
    signal q : std_logic_vector(7 downto 0) := "00000000";
 	signal pfull_f1 : std_logic := '0';
 	signal pfull_f2 : std_logic := '0';
-	signal pixcounter : std_logic_vector(13 downto 0) := "00000000000000";
+	signal pixcounter : std_logic_vector(13 downto 0) := (others => '0');
+	signal ctrldffchain : std_logic_vector(18 downto 0) := (others => '0');
+	
+	signal write2file : std_logic := '0';
 
    -- Clock period definitions
    constant clk_period : time := 10 ns;
@@ -66,102 +88,96 @@ ARCHITECTURE behavior OF tb_dffChain IS
 
 BEGIN
  
+ 
+ 		-- instantiate write control state machine
+	wrctrlsm : writecontrolstatemachine port map(clk => clk, en => enWrCtrlStMachine, write2file => write2file);
+	
 	-- Instantiate the Unit Under Test (UUT)
-	-- UUT = CACHE MEMORY
+	-- UUT = CACHE MEMORY + Processing Unit = DffChain
    uut: DffChain PORT MAP (
           -- input
 			 d => d,
-			 
 			 -- control signals
 			 en => en,
           clk => clk,
  			 rst => rst,
 
-			rd_en_f1 => rd_en_f1,
-			rd_en_f2 => rd_en_f2,
-			
-			wr_en_f1 => wr_en_f1, 
-			wr_en_f2 => wr_en_f2, 
 			prog_full_thresh => prog_full_thresh,
 			 
 			 -- observables
           q => q,
 			 pixcounter => pixcounter,
 			 pfull_f1 => pfull_f1,
-			 pfull_f2 => pfull_f2 
+			 pfull_f2 => pfull_f2, 
+			 ctrldffchain => ctrldffchain,
+			rd_en_f1 => rd_en_f1,
+			rd_en_f2 => rd_en_f2,
+			
+			wr_en_f1 => wr_en_f1, 
+			wr_en_f2 => wr_en_f2, 
+			enWrCtrlStMachine => enWrCtrlStMachine
         );
+		  
+-- CLOCK PROCESS
+process 
+begin
+			clk <= '0';
+			wait for clk_period/2;
+			clk <= '1';
+			wait for clk_period/2;
+end process;
 
-   -- Clock process definitions
---   clk_process :process
---   begin
---		clk <= '0';
---		wait for clk_period/2;
---		clk <= '1';
---		wait for clk_period/2;
---   end process;
- 
-
-   -- Stimulus process, read data from a file and feed it into the pipeline
+	
+   -- Stimulus process: read data from a file and feed it into the pipeline
    stim_proc: process
 		-- variables for the stimulus process
-	 
 	 -- READ:
 	  FILE data : text;
 	  variable sample : line;
 	  -- WRITE:
 	  file dataout : text;
 	  variable sampleout : line;
+	  -- get last n=4 pixels
+	  variable extensionthreshold : integer := 4;
+	  variable extensioncounter : integer := 0;
+	  variable lastpixelread : boolean := false;
 	 
 	  
-   begin		
+   begin
+		-- reset at beginning
 		rst <='1';
 		en <= '0';
-		
-		rd_en_f1 <= '0';
-		rd_en_f2 <= '0';
-		
-		prog_full_thresh <= "0001111101"; -- 128-3=125
-      
-		-- hold reset state for 100 ns.
-     wait for 100 ns;	
-		en <= '1';
+		prog_full_thresh <= "0001111010"; --"0001111100"(124) "0001111011"(123) "0001111010"(122)
+		wait for 100 ns;	
 		rst <= '0';
-		wr_en_f1 <= '1';
-		wr_en_f2 <= '0';
+		wait for 50 ns;
 		
-		wait for 20 ns;
-		
+		-- open files for i/o
 		 file_open (data,"Lena128x128g_8bits.dat", read_mode);
 		 file_open (dataout,"Lena128x128g_8bits_out.dat", write_mode);
 
-		 while not endfile(data) loop
-			readline (data,sample);
-			read (sample, pixel);
-			d <= pixel;
-			
-			
-			-- toggle the clock
-			-- input on din is read on rising_edge(clk)
-			clk <= '0';
-			wait for clk_period/2;
-			clk <= '1';
-			wait for clk_period/2;
-			-- end of clock toggle
-	
-			-- if 128 pixels have been read, read enable fifo1
-			if (pfull_f1 = '1' and pixcounter >= "00000010000000") then
-					rd_en_f1 <= '1';
-					wr_en_f2 <= '1';
-			end if;
-			
-			-- if 128x2 = 256 pixels have been read, read enable fifo2
-			if (pfull_f2 = '1' and pixcounter >= "00000100000011") then
-					rd_en_f2 <= '1';
-					write(sampleout, q);
-					writeline(dataout, sampleout);
-			end if;
-			
-			
+		 while not ( endfile(data) and lastpixelread) loop
+				if not endfile(data) then
+						readline (data,sample);
+						read (sample, pixel);
+						d <= pixel;
+				end if;
+				
+				if endfile(data) then 
+					extensioncounter := integer(extensioncounter + 1);
+					if (extensioncounter >= extensionthreshold) then
+						lastpixelread := true;
+					end if;
+				end if;
+				
+				en <= '1';
+				
+				wait for clk_period;
+				if (pfull_f2 = '1'  and enWrCtrlStMachine = '1') then
+						write(sampleout, q);
+						writeline(dataout, sampleout);
+				end if;
+				
 		 end loop;
 		 
 		 file_close (data);
